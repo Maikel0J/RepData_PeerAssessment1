@@ -1,25 +1,187 @@
 ---
 title: "Reproducible Research: Peer Assessment 1"
+author: Maikel Jonkers
 output: 
   html_document:
     keep_md: true
 ---
 
+```{r opts, echo = FALSE}
+knitr::opts_chunk$set(
+  fig.path = "figure/"
+)
+```
 
 ## Loading and preprocessing the data
+Initiation of the code with clearing data/memory, setting working directory and loading libraries. 
+```{r initiation, echo=TRUE}
+rm(list=ls())       # Clear data
+gc()                # Clear memory R
+# Set Working directory
+oldwd <- getwd()
+setwd("D:/NoBackup/Git/RepData_PeerAssessment1")
+library(dplyr)
+library(xtable)
+```
 
+#### 1. Load the data (i.e. read.csv())
+```{r load data, echo=TRUE}
+unzip(zipfile="activity.zip") 
+df <- read.csv('activity.csv', sep=',')
+```
+#### 2. Process/transform the data (if necessary) into a format suitable for your analysis
+The following steps are preformed:
+- Make the data column a date class
+- Make a new column 'time' with a string notation for the time corresponding with the interval
+- Make a new column with the datetime as class POSIXct
+- Make a counter for the interval of the day [1..288]
+```{r preprocess, echo=TRUE}
+df$date <- as.Date(df$date, "%Y-%m-%d")
+df$time <- format(strptime(sprintf("%04d", df$interval), format="%H%M"), format = "%H:%M")
+df$datetime <- as.POSIXct(paste(df$date, df$time), format="%Y-%m-%d %H:%M")
+df$mincounter <- df$interval%%100/5 + floor(df$interval/100)*12+1
+```
 
 
 ## What is mean total number of steps taken per day?
+For this part of the assignment, the missing values in the dataset are ignored.
 
+#### 1. Calculate the total number of steps taken per day
+Below is the code shown to calculate the number of steps per day and save it in a new dataframe 'df_sum'
+```{r sumsteps, echo=TRUE}
+df_sum <- aggregate(df$steps, by=list(Category=df$date), FUN=sum)
+colnames(df_sum) <- c("Day", "SumNoSteps")
+```
+
+#### 2. Make a histogram of the total number of steps taken each day
+```{r hist, echo=TRUE}
+hist(df_sum$SumNoSteps, breaks = 25, main="Number of days and steps taken",xlab="Categorical index of steps taken", 
+     ylab="Number of days", col='green')
+```
+
+#### 3. Calculate and report the mean and median of the total number of steps taken per day
+There a many days, so the tables are not small (61 rows, 2 columns)
+```{r mean, echo=TRUE}
+df_mean <- aggregate(df$steps, by=list(Category=df$date), FUN=mean)
+colnames(df_mean) <- c("Day", "MeanNoSteps")
+knitr::kable(df_mean, format = 'html')
+```
+```{r median, echo=TRUE}
+df_median <- aggregate(df$steps, by=list(Category=df$date), FUN=median)
+colnames(df_median) <- c("Day", "MedianNoSteps")
+knitr::kable(df_median, format = 'html')
+```
 
 
 ## What is the average daily activity pattern?
+#### 1. Make a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
+```{r interval, echo=TRUE}
+df_interval <-df[complete.cases(df),]
+df_interval <- aggregate(df_interval$steps, by=list(Category=df_interval$mincounter), FUN=mean)
+colnames(df_interval) <- c("time", "MeanNoSteps")
+df_interval$MeanNoSteps <- round(df_interval$MeanNoSteps)
+plot(df_interval$MeanNoSteps~df_interval$time, main = "Average steps per day", xlab = "Time of the day", ylab = "Number of steps", 
+     xaxt="n", type = "l", col='blue')
+axis(1, at=1:289, labels=df$time[1:289])
+```
+
+#### 2. Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+```{r maxinterval, echo=TRUE}
+MaxMincounter <- subset(df_interval$time, df_interval$MeanNoSteps == max(df_interval$MeanNoSteps))
+MaxTime <- df[!duplicated(df$mincounter==MaxMincounter),4][[2]]
+```
+The number of interval where average maximum is made: `r MaxMincounter`
+
+Time where averge maximum steps are made: `r MaxTime`
 
 
 
 ## Imputing missing values
+Note that there are a number of days/intervals where there are missing values (coded as NA). The presence of missing days may introduce 
+bias into some calculations or summaries of the data.
 
+#### 1. Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with NAs)
+```{r noNaNs, echo=TRUE}
+NoRowsNa <- sum(is.na(df$steps))
+```
+The total number of missing values in the column "Steps": `r NoRowsNa`
+
+
+#### 2. Devise a strategy for filling in all of the missing values in the dataset. The strategy does not need to be sophisticated. For example, you could use the mean/median for that day, or the mean for that 5-minute interval, etc.
+Strategy: Subsitute NaNs of the 'steps' column by the mean of that 5-minute interval.
+
+#### 3. Create a new dataset that is equal to the original dataset but with the missing data filled in.
+Code that makes new dataframe where NaNs for the column 'steps' are filled in. 
+```{r df_Impute, echo=TRUE}
+df_ImputeNa <- df %>% 
+    group_by(mincounter) %>% 
+    mutate(steps= ifelse(is.na(steps), round(mean(steps, na.rm=TRUE)), steps))
+```
+
+#### 4. Make a histogram of the total number of steps taken each day and Calculate and report the mean and median total number of steps taken per day. Do these values differ from the estimates from the first part of the assignment? What is the impact of imputing missing data on the estimates of the total daily number of steps?
+Code for the histogram
+```{r sumImpute, echo=TRUE}
+df_sumImpute <- aggregate(df_ImputeNa$steps, by=list(Category=df_ImputeNa$date), FUN=sum)
+colnames(df_sumImpute) <- c("Day", "SumNoSteps")
+hist(df_sumImpute$SumNoSteps, breaks = 25, main="Number of days and steps taken",xlab="Categorical index of steps taken", 
+     ylab="Number of days", col='green')
+```
+
+Code for the tables with the mean and median
+```{r meanmedianImpute, echo=TRUE}
+df_meanImpute <- aggregate(df_ImputeNa$steps, by=list(Category=df_ImputeNa$date), FUN=mean)
+colnames(df_meanImpute) <- c("Day", "MeanNoSteps")
+knitr::kable(df_meanImpute, format = 'html')
+df_medianImpute <- aggregate(df_ImputeNa$steps, by=list(Category=df_ImputeNa$date), FUN=median)
+colnames(df_medianImpute) <- c("Day", "MedianNoSteps")
+knitr::kable(df_medianImpute, format = 'html')
+```
+
+##### Impact of imputing missing data
+The impact is that the average is added to several days and time intervals, therefore the total number of steps and median has changed for the days where there were no values. The histograms shows this too (more days to count, and especially visible is the the average shows a higher peak).
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+Dataset were the NaNs are filled is used. 
+
+#### 1. Create a new factor variable in the dataset with two levels - "weekday" and "weekend" indicating whether a given date is a weekday or weekend day.
+Code to create a new column with the notation if a day is a weekday or day in the weekend. Since I live in the Netherlands and my laptop is configured like this, the function 'weekdays' will give Dutch names. Therefore the factor has Dutch names!
+```{r factorweekday, echo=TRUE}
+weekdaysDutch <- c('maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag')
+df_ImputeNa$weekday <- factor((weekdays(df_ImputeNa$date) %in% weekdaysDutch), 
+                   levels=c(FALSE, TRUE), labels=c('weekend', 'weekday')) 
+```
+
+#### 2. Make a panel plot containing a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). See the README file in the GitHub repository to see an example of what this plot should look like using simulated data.
+
+Data preperation for weekday:
+```{r dataweekday, echo=TRUE}
+df_intervalWeekday <- aggregate(df_ImputeNa$steps[df_ImputeNa$weekday=='weekday'], 
+                                by=list(Category=df_ImputeNa$mincounter[df_ImputeNa$weekday=='weekday']), FUN=mean)
+colnames(df_intervalWeekday) <- c("time", "MeanNoStepsWeekday")
+df_intervalWeekday$MeanNoStepsWeekday <- round(df_intervalWeekday$MeanNoStepsWeekday)
+```
+
+Data preperation for weekend:
+```{r dataweekend, echo=TRUE}
+df_intervalWeekend <- aggregate(df_ImputeNa$steps[df_ImputeNa$weekday=='weekend'], 
+                                by=list(Category=df_ImputeNa$mincounter[df_ImputeNa$weekday=='weekend']), FUN=mean)
+colnames(df_intervalWeekend) <- c("time", "MeanNoStepsWeekend")
+df_intervalWeekend$MeanNoStepsWeekend <- round(df_intervalWeekend$MeanNoStepsWeekend)
+```
+Code to make plot (combine two plots as one):
+```{r plotweekday, echo=TRUE, fig.height=8}
+par(mfrow=c(2,1)) 
+plot(df_intervalWeekday$MeanNoStepsWeekday~df_intervalWeekday$time, main = "Average steps per weekday", xlab = "No 5th minute of the day", 
+     ylab = "Time of the day", ylim=c(0,250), xaxt="n", type = "l", col='red')
+axis(1, at=1:289, labels=df_ImputeNa$time[1:289])
+plot(df_intervalWeekend$MeanNoStepsWeekend~df_intervalWeekend$time, main = "Average steps per day in the weekend", 
+     xlab = "Time of the day", ylim=c(0,250), ylab = "Number of steps", xaxt="n", type = "l", col='red')
+axis(1, at=1:289, labels=df_ImputeNa$time[1:289])
+```
+
+
+To old working directory
+```{r oldwd, echo=TRUE}
+setwd(oldwd)
+```
